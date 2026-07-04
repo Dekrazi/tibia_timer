@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tibia Timers</title>
+<style>
+  :root{
+    --bg: #4a4a49;
+    --panel: #45433f;
+    --panel-border: #221f1c;
+    --panel-highlight: rgba(255,255,255,0.09);
+    --input-bg: #302e2b;
+    --input-border: #1a1917;
+    --accent-gold: #d9b354;
+    --accent-blue: #5a5f5f;
+    --accent-blue-hover: #6c716f;
+    --text: #e9e5da;
+    --text-dim: #b7b2a6;
+    --danger: #c1443b;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", Tahoma, Verdana, sans-serif;
+    height: 100%;
+    overflow: hidden;
+    transition: background 0.1s ease;
+  }
+
+  body.flash-active{
+    background: #d9302b;
+  }
+
+  body{
+    display:flex;
+    justify-content:center;
+    padding: 10px 8px 12px;
+    padding-top: 34px;
+  }
+
+  .drag-strip{
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 30px;
+    -webkit-app-region: drag;
+    background: transparent;
+  }
+
+  .app{
+    width: 100%;
+  }
+
+  .top-controls{
+    text-align:center;
+    margin-bottom: 10px;
+  }
+  .stay-on-top{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  .stay-on-top input[type="checkbox"]{
+    width:12px;height:12px;
+    accent-color: var(--text);
+  }
+
+  .opacity-row{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .opacity-row label{ white-space:nowrap; }
+  .opacity-row input[type="range"]{
+    flex:1;
+    accent-color: var(--text);
+  }
+
+  .card{
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    box-shadow: inset 1px 1px 0 var(--panel-highlight), inset -1px -1px 0 rgba(0,0,0,0.35);
+    padding: 10px 10px 12px;
+    margin-bottom: 10px;
+    text-align:center;
+  }
+
+  .card h2{
+    margin: 0 0 8px;
+    color: var(--accent-gold);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .inputs{
+    display:flex;
+    gap: 6px;
+    justify-content:center;
+    margin-bottom: 8px;
+  }
+  .inputs input{
+    width: 50px;
+    padding: 5px 4px;
+    text-align:center;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 3px;
+    box-shadow: inset 1px 1px 2px rgba(0,0,0,0.5);
+    color: var(--text);
+    font-size: 13px;
+  }
+  .inputs input:focus{
+    outline: none;
+    border-color: var(--accent-blue);
+  }
+  .inputs input:disabled{
+    opacity: 0.5;
+  }
+
+  .display{
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin: 4px 0 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .display.warning{ color: var(--danger); }
+  .display.done{
+    color: var(--danger);
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse{
+    0%,100%{ opacity:1; }
+    50%{ opacity:0.4; }
+  }
+
+  .buttons{
+    display:flex;
+    gap: 10px;
+    justify-content:center;
+  }
+  .buttons button{
+    flex:1;
+    max-width: 100px;
+    padding: 8px 0;
+    border: 1px solid var(--panel-border);
+    border-radius: 4px;
+    background: var(--accent-blue);
+    box-shadow: inset 1px 1px 0 rgba(255,255,255,0.15), inset -1px -1px 0 rgba(0,0,0,0.3);
+    color: var(--text);
+    font-size: 14px;
+    cursor:pointer;
+    transition: background 0.15s ease;
+  }
+  .buttons button:hover{ background: var(--accent-blue-hover); }
+  .buttons button:active{ transform: translateY(1px); }
+  .buttons button.stop{ background: var(--danger); }
+  .buttons button.stop:hover{ background: #d05c53; }
+</style>
+</head>
+<body>
+
+<div class="drag-strip"></div>
+
+<div class="app" id="app">
+
+  <div class="top-controls">
+    <div class="stay-on-top">
+      <input type="checkbox" id="stayOnTop" checked>
+      <label for="stayOnTop">Stay on Top</label>
+    </div>
+    <div class="stay-on-top">
+      <input type="checkbox" id="muteSound">
+      <label for="muteSound">Disable Sound</label>
+    </div>
+    <div class="opacity-row">
+      <label for="opacity">Opacity:</label>
+      <input type="range" id="opacity" min="20" max="100" value="50">
+    </div>
+  </div>
+
+  <div id="timers"></div>
+
+</div>
+
+<script>
+  // Each timer has its own spoken alert phrase, played when it hits zero.
+  const TIMER_DEFS = [
+    { name: "Necklace", minutes: 29, seconds: 0, alertText: "ring neck" },
+    { name: "Potion",   minutes: 10, seconds: 0, alertText: "drink potion" },
+  ];
+
+  const timersContainer = document.getElementById('timers');
+  let soundMuted = false;
+
+  function pad(n){ return String(n).padStart(2, '0'); }
+
+  function flashWindow(){
+    const el = document.body;
+    const flashOnMs = 150;
+    const flashOffMs = 150;
+    const flashesPerGroup = 3;
+    const totalGroups = 3;
+    const groupPauseMs = 500;
+
+    let group = 0;
+
+    function runGroup(){
+      let flashCount = 0;
+
+      function doFlash(){
+        el.classList.add('flash-active');
+        setTimeout(() => {
+          el.classList.remove('flash-active');
+          flashCount++;
+          if(flashCount < flashesPerGroup){
+            setTimeout(doFlash, flashOffMs);
+          } else {
+            group++;
+            if(group < totalGroups){
+              setTimeout(runGroup, groupPauseMs);
+            }
+          }
+        }, flashOnMs);
+      }
+
+      doFlash();
+    }
+
+    runGroup();
+  }
+
+  function speak(text, times = 3){
+    if(soundMuted) return;
+    try {
+      // Cancel anything currently queued so overlapping timers don't garble each other
+      window.speechSynthesis.cancel();
+      for(let i = 0; i < times; i++){
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1;
+        utterance.pitch = 1;
+        utterance.volume = 1;
+        window.speechSynthesis.speak(utterance);
+      }
+    } catch (err) {
+      console.error('Speech synthesis failed:', err);
+    }
+  }
+
+  function buildTimer(def){
+    const wrap = document.createElement('div');
+    wrap.className = 'card';
+    wrap.innerHTML = `
+      <h2>${def.name}</h2>
+      <div class="inputs">
+        <input type="number" min="0" max="999" class="min-input" value="${def.minutes}">
+        <input type="number" min="0" max="59" class="sec-input" value="${def.seconds}">
+      </div>
+      <div class="display">${pad(def.minutes)}:${pad(def.seconds)}</div>
+      <div class="buttons">
+        <button class="start">Start</button>
+        <button class="reset">Reset</button>
+      </div>
+    `;
+    timersContainer.appendChild(wrap);
+
+    const minInput = wrap.querySelector('.min-input');
+    const secInput = wrap.querySelector('.sec-input');
+    const display  = wrap.querySelector('.display');
+    const startBtn = wrap.querySelector('.start');
+    const resetBtn = wrap.querySelector('.reset');
+
+    let totalSeconds = def.minutes * 60 + def.seconds;
+    let intervalId = null;
+    let running = false;
+    // True whenever the countdown should be re-read from the input fields
+    // the next time Start is pressed (i.e. it hasn't been running since the
+    // fields were last edited/reset).
+    let needsSyncFromInputs = true;
+
+    function render(){
+      const m = Math.floor(totalSeconds / 60);
+      const s = totalSeconds % 60;
+      display.textContent = `${pad(m)}:${pad(s)}`;
+      display.classList.toggle('warning', totalSeconds <= 10 && totalSeconds > 0);
+      display.classList.toggle('done', totalSeconds === 0);
+    }
+
+    function tick(){
+      if(totalSeconds <= 0){
+        stop();
+        return;
+      }
+      totalSeconds -= 1;
+      render();
+      if(totalSeconds === 0){
+        stop();
+        needsSyncFromInputs = true;
+        flashWindow();
+        if(!soundMuted){
+          speak(def.alertText);
+        }
+      }
+    }
+
+    function start(){
+      if(running) return;
+      if(needsSyncFromInputs){
+        const m = parseInt(minInput.value, 10) || 0;
+        const s = Math.min(parseInt(secInput.value, 10) || 0, 59);
+        totalSeconds = m * 60 + s;
+        needsSyncFromInputs = false;
+      }
+      if(totalSeconds <= 0) return;
+      running = true;
+      minInput.disabled = true;
+      secInput.disabled = true;
+      startBtn.textContent = 'Stop';
+      startBtn.classList.add('stop');
+      intervalId = setInterval(tick, 1000);
+      render();
+    }
+
+    function stop(){
+      running = false;
+      clearInterval(intervalId);
+      minInput.disabled = false;
+      secInput.disabled = false;
+      startBtn.textContent = 'Start';
+      startBtn.classList.remove('stop');
+    }
+
+    function reset(){
+      stop();
+      minInput.value = def.minutes;
+      secInput.value = def.seconds;
+      totalSeconds = def.minutes * 60 + def.seconds;
+      needsSyncFromInputs = true;
+      render();
+    }
+
+    // Live-preview the display as the user edits the fields (only while stopped).
+    function handleInputEdit(){
+      if(running) return;
+      needsSyncFromInputs = true;
+      const m = parseInt(minInput.value, 10) || 0;
+      const s = Math.min(parseInt(secInput.value, 10) || 0, 59);
+      totalSeconds = m * 60 + s;
+      render();
+    }
+    minInput.addEventListener('input', handleInputEdit);
+    secInput.addEventListener('input', handleInputEdit);
+
+    startBtn.addEventListener('click', () => running ? stop() : start());
+    resetBtn.addEventListener('click', reset);
+
+    render();
+  }
+
+  TIMER_DEFS.forEach(buildTimer);
+
+  // ---- Top controls: wired to real Electron window behavior via preload bridge ----
+  const opacitySlider = document.getElementById('opacity');
+  opacitySlider.addEventListener('input', () => {
+    const value = opacitySlider.value / 100;
+    if (window.desktop) window.desktop.setOpacity(value);
+  });
+
+  const stayOnTop = document.getElementById('stayOnTop');
+  stayOnTop.addEventListener('change', () => {
+    if (window.desktop) window.desktop.setAlwaysOnTop(stayOnTop.checked);
+  });
+
+  const muteSound = document.getElementById('muteSound');
+  muteSound.addEventListener('change', () => {
+    soundMuted = muteSound.checked;
+    if (soundMuted) window.speechSynthesis.cancel();
+  });
+</script>
+
+</body>
+</html>
